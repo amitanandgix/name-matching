@@ -129,6 +129,31 @@ def _print_table(query: str, results: list[MatchResult]) -> None:
         f"{_BOLD}{'Best Match':<{C7}}{_RESET}",
     ])
     sep(W1)
+    # Pre-build the "why best" string so we can inline it
+    why_parts = []
+    if best_idx is not None:
+        _b = results[best_idx]
+        _gn = _b.component_scores.get("given_name")
+        _fn = _b.component_scores.get("family_name")
+        if _b.score == 1.0:
+            why_parts.append("exact match after transliteration")
+        else:
+            why_parts.append(f"highest score ({_b.score:.3f})")
+        if _fn is not None and _fn >= 0.95:
+            why_parts.append("last name identical")
+        elif _fn is not None and _fn >= 0.80:
+            why_parts.append(f"last name strong ({_fn:.2f})")
+        if _gn is not None and _gn >= 0.95:
+            why_parts.append("first name identical")
+        elif _gn is not None and _gn >= 0.80:
+            why_parts.append(f"first name strong ({_gn:.2f})")
+        if _b.confidence_label == "HIGH":
+            why_parts.append("HIGH confidence")
+    why_str = " | ".join(why_parts)
+
+    # Total inner width of the row (all columns + separators) for the why sub-row
+    total_inner = sum(W1) + len(W1) * 3 - 1   # each col adds " X " + "|"
+
     for i, r in enumerate(results, start=1):
         dc = _DECISION_COLOR[r.decision]
         cc = _CONF_COLOR[r.confidence_label]
@@ -145,6 +170,9 @@ def _print_table(query: str, results: list[MatchResult]) -> None:
             f"{cc}{r.confidence_label:<{C6}}{_RESET}",
             best_tag,
         ])
+        if is_best and why_str:
+            label = f"  Why best:  {why_str}"
+            print(f"  |{_GREEN}{_DIM}{label:<{total_inner}}{_RESET}|")
         sep(W1)
 
     # ── TABLE 2: Component Scores ──────────────────────────────────────────────
