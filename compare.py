@@ -106,9 +106,17 @@ def _print_table(query: str, results: list[MatchResult]) -> None:
             parts.append(" " + c + " " * padding + " ")
         print("  |" + "|".join(parts) + "|")
 
+    # ── Pick best match ────────────────────────────────────────────────────────
+    best_idx = None
+    for i, r in enumerate(results):
+        if r.decision in ("MATCH", "POSSIBLE_MATCH"):
+            best_idx = i
+            break
+
     # ── TABLE 1: Results ───────────────────────────────────────────────────────
+    C7 = 12   # Best Match column
     print(f"  {_BOLD}RESULTS{_RESET}")
-    W1 = [C0, C1, C2, C3, C4, C5, C6]
+    W1 = [C0, C1, C2, C3, C4, C5, C6, C7]
     sep(W1)
     row(W1, [
         f"{'#':<{C0}}",
@@ -118,12 +126,15 @@ def _print_table(query: str, results: list[MatchResult]) -> None:
         f"{_BOLD}{'Decision':<{C4}}{_RESET}",
         f"{_BOLD}{'Score':<{C5}}{_RESET}",
         f"{_BOLD}{'Confidence':<{C6}}{_RESET}",
+        f"{_BOLD}{'Best Match':<{C7}}{_RESET}",
     ])
     sep(W1)
     for i, r in enumerate(results, start=1):
         dc = _DECISION_COLOR[r.decision]
         cc = _CONF_COLOR[r.confidence_label]
         translit = r.name2_latin if r.name2_latin != r.name2 else "-"
+        is_best = (i - 1) == best_idx
+        best_tag = f"{_GREEN}{'* BEST':<{C7}}{_RESET}" if is_best else f"{'':<{C7}}"
         row(W1, [
             f"{i:<{C0}}",
             f"{r.name1:<{C1}}",
@@ -132,6 +143,7 @@ def _print_table(query: str, results: list[MatchResult]) -> None:
             f"{dc}{r.decision:<{C4}}{_RESET}",
             f"{r.score:<{C5}.3f}",
             f"{cc}{r.confidence_label:<{C6}}{_RESET}",
+            best_tag,
         ])
         sep(W1)
 
@@ -231,8 +243,41 @@ def _print_table(query: str, results: list[MatchResult]) -> None:
         f"\n  {_BOLD}Summary:{_RESET}  "
         f"{_GREEN}MATCH {counts['MATCH']}{_RESET}   "
         f"{_YELLOW}POSSIBLE_MATCH {counts['POSSIBLE_MATCH']}{_RESET}   "
-        f"{_RED}NO_MATCH {counts['NO_MATCH']}{_RESET}\n"
+        f"{_RED}NO_MATCH {counts['NO_MATCH']}{_RESET}"
     )
+
+    # ── Best match verdict ─────────────────────────────────────────────────────
+    if best_idx is not None:
+        best = results[best_idx]
+        gn = best.component_scores.get("given_name")
+        fn = best.component_scores.get("family_name")
+
+        why_parts = []
+        if best.score == 1.0:
+            why_parts.append("it is an exact match after transliteration")
+        else:
+            why_parts.append(f"it has the highest similarity score ({best.score:.3f})")
+        if fn is not None and fn >= 0.95:
+            why_parts.append("last name is identical")
+        elif fn is not None and fn >= 0.80:
+            why_parts.append(f"last name is a strong match ({fn:.2f})")
+        if gn is not None and gn >= 0.95:
+            why_parts.append("first name is identical")
+        elif gn is not None and gn >= 0.80:
+            why_parts.append(f"first name is a strong match ({gn:.2f})")
+        if best.name2_latin != best.name2:
+            why_parts.append(f"transliterated from '{best.name2}' to '{best.name2_latin}'")
+        if best.confidence_label == "HIGH":
+            why_parts.append("confidence is HIGH")
+
+        why = ", and ".join(why_parts[:3])  # cap at 3 reasons for readability
+        print(
+            f"\n  {_BOLD}Best Match:{_RESET}  {_GREEN}{best.name2}{_RESET}"
+            + (f"  {_DIM}({best.name2_latin}){_RESET}" if best.name2_latin != best.name2 else "")
+        )
+        print(f"  {_DIM}Why: {why}.{_RESET}\n")
+    else:
+        print(f"\n  {_DIM}No match found among the candidates.{_RESET}\n")
 
 
 # -- Core run ------------------------------------------------------------------
