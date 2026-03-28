@@ -11,6 +11,7 @@ import sys
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 import os
+import re
 import textwrap
 from pathlib import Path
 
@@ -77,27 +78,39 @@ def _print_analysis(name: str) -> None:
     print()
 
 
+def _score_bar(v: float, width: int = 10) -> str:
+    filled = round(v * width)
+    return "[" + "#" * filled + "." * (width - filled) + f"] {v:.2f}"
+
+
 def _print_table(query: str, results: list[MatchResult]) -> None:
-    # Column widths
-    C0 = 3
-    C1 = max(len(query), 12)
-    C2 = max(max(len(r.name2) for r in results), 14)
-    C3 = max(max(len(r.name2_latin) if r.name2_latin != r.name2 else 1
-                 for r in results), 14)
-    C4 = 15
-    C5 = 7
-    C6 = 10
+    # ── Column widths ──────────────────────────────────────────────────────────
+    C0  = 3
+    C1  = max(len(query), 12)
+    C2  = max(max(len(r.name2) for r in results), 14)
+    C3  = max(max(len(r.name2_latin) if r.name2_latin != r.name2 else 1
+                  for r in results), 12)
+    C4  = 15   # Decision
+    C5  = 7    # Score
+    C6  = 10   # Confidence
 
-    def sep():
-        print(f"  +-{'-'*C0}-+-{'-'*C1}-+-{'-'*C2}-+-{'-'*C3}-+"
-              f"-{'-'*C4}-+-{'-'*C5}-+-{'-'*C6}-+")
+    def sep(widths):
+        print("  +" + "+".join("-" * (w + 2) for w in widths) + "+")
 
-    def row(*cols):
-        c0, c1, c2, c3, c4, c5, c6 = cols
-        print(f"  | {c0} | {c1} | {c2} | {c3} | {c4} | {c5} | {c6} |")
+    def row(widths, cells):
+        parts = []
+        for w, c in zip(widths, cells):
+            # strip ANSI to measure real length
+            plain = re.sub(r"\033\[[0-9;]*m", "", c)
+            padding = w - len(plain)
+            parts.append(" " + c + " " * padding + " ")
+        print("  |" + "|".join(parts) + "|")
 
-    sep()
-    row(
+    # ── TABLE 1: Results ───────────────────────────────────────────────────────
+    print(f"  {_BOLD}RESULTS{_RESET}")
+    W1 = [C0, C1, C2, C3, C4, C5, C6]
+    sep(W1)
+    row(W1, [
         f"{'#':<{C0}}",
         f"{_BOLD}{'Input Name':<{C1}}{_RESET}",
         f"{_BOLD}{'Candidate':<{C2}}{_RESET}",
@@ -105,14 +118,13 @@ def _print_table(query: str, results: list[MatchResult]) -> None:
         f"{_BOLD}{'Decision':<{C4}}{_RESET}",
         f"{_BOLD}{'Score':<{C5}}{_RESET}",
         f"{_BOLD}{'Confidence':<{C6}}{_RESET}",
-    )
-    sep()
-
+    ])
+    sep(W1)
     for i, r in enumerate(results, start=1):
         dc = _DECISION_COLOR[r.decision]
         cc = _CONF_COLOR[r.confidence_label]
         translit = r.name2_latin if r.name2_latin != r.name2 else "-"
-        row(
+        row(W1, [
             f"{i:<{C0}}",
             f"{r.name1:<{C1}}",
             f"{r.name2:<{C2}}",
@@ -120,24 +132,103 @@ def _print_table(query: str, results: list[MatchResult]) -> None:
             f"{dc}{r.decision:<{C4}}{_RESET}",
             f"{r.score:<{C5}.3f}",
             f"{cc}{r.confidence_label:<{C6}}{_RESET}",
-        )
-        sep()
+        ])
+        sep(W1)
 
-    # Reasoning section below the table
-    print(f"\n  {_BOLD}Reasoning{_RESET}")
-    print(f"  {'-' * 70}")
+    # ── TABLE 2: Component Scores ──────────────────────────────────────────────
+    print(f"\n  {_BOLD}COMPONENT SCORES  {_DIM}(first name vs first name / last name vs last name){_RESET}")
+    CA = 14   # Given Name bar
+    CB = 14   # Family Name bar
+    W2 = [C0, C2, CA, CB]
+    sep(W2)
+    row(W2, [
+        f"{'#':<{C0}}",
+        f"{_BOLD}{'Candidate':<{C2}}{_RESET}",
+        f"{_BOLD}{'First Name':<{CA}}{_RESET}",
+        f"{_BOLD}{'Last Name':<{CB}}{_RESET}",
+    ])
+    sep(W2)
     for i, r in enumerate(results, start=1):
-        if r.reasoning:
-            print(f"  #{i}  {_BOLD}{r.name1}{_RESET} vs {_BOLD}{r.name2}{_RESET}")
-            print("  " + _wrap(r.reasoning, width=70, indent="  "))
-            print()
+        gn = r.component_scores.get("given_name")
+        fn = r.component_scores.get("family_name")
 
-    # Summary
+        def _fmt(v, gate=False):
+            if v is None:
+                return f"{'n/a':<{CA}}"
+            color = _GREEN if v >= 0.85 else (_YELLOW if v >= 0.65 else _RED)
+            bar = _score_bar(v)
+            tag = f"  {_DIM}[gate]{_RESET}" if gate else ""
+            return f"{color}{bar}{_RESET}{tag}"
+
+        fn_gated = (fn is not None and fn < 0.65 and r.decision == "NO_MATCH"
+                    and gn is not None and gn >= 0.65)
+        row(W2, [
+            f"{i:<{C0}}",
+            f"{r.name2:<{C2}}",
+            _fmt(gn),
+            _fmt(fn, gate=fn_gated),
+        ])
+        sep(W2)
+
+    # ── TABLE 3: Algorithm Breakdown ───────────────────────────────────────────
+    print(f"\n  {_BOLD}ALGORITHM BREAKDOWN  {_DIM}(how each method scored the pair){_RESET}")
+    CX = 16   # each algorithm column
+    W3 = [C0, C2, CX, CX, CX, CX]
+    sep(W3)
+    row(W3, [
+        f"{'#':<{C0}}",
+        f"{_BOLD}{'Candidate':<{C2}}{_RESET}",
+        f"{_BOLD}{'Token Sort':<{CX}}{_RESET}",
+        f"{_BOLD}{'Token Set':<{CX}}{_RESET}",
+        f"{_BOLD}{'Jaro-Winkler':<{CX}}{_RESET}",
+        f"{_BOLD}{'Phonetic':<{CX}}{_RESET}",
+    ])
+    sep(W3)
+    for i, r in enumerate(results, start=1):
+        bd = r.breakdown
+        def _b(key):
+            v = bd.get(key)
+            if v is None:
+                return f"{'(exact)':<{CX}}"
+            color = _GREEN if v >= 0.85 else (_YELLOW if v >= 0.65 else _RED)
+            return f"{color}{_score_bar(v):<{CX}}{_RESET}"
+        row(W3, [
+            f"{i:<{C0}}",
+            f"{r.name2:<{C2}}",
+            _b("token_sort"),
+            _b("token_set"),
+            _b("jaro_winkler"),
+            _b("phonetic"),
+        ])
+        sep(W3)
+
+    # ── TABLE 4: Reasoning ─────────────────────────────────────────────────────
+    print(f"\n  {_BOLD}REASONING{_RESET}")
+    CR = max(60, C2 + 46)
+    W4 = [C0, C2, CR]
+    sep(W4)
+    row(W4, [
+        f"{'#':<{C0}}",
+        f"{_BOLD}{'Candidate':<{C2}}{_RESET}",
+        f"{_BOLD}{'Explanation':<{CR}}{_RESET}",
+    ])
+    sep(W4)
+    for i, r in enumerate(results, start=1):
+        lines = textwrap.wrap(r.reasoning or "-", width=CR)
+        for j, line in enumerate(lines):
+            row(W4, [
+                f"{i if j == 0 else '':<{C0}}",
+                f"{r.name2 if j == 0 else '':<{C2}}",
+                f"{line:<{CR}}",
+            ])
+        sep(W4)
+
+    # ── Summary ────────────────────────────────────────────────────────────────
     counts = {"MATCH": 0, "POSSIBLE_MATCH": 0, "NO_MATCH": 0}
     for r in results:
         counts[r.decision] += 1
     print(
-        f"  {_BOLD}Summary:{_RESET}  "
+        f"\n  {_BOLD}Summary:{_RESET}  "
         f"{_GREEN}MATCH {counts['MATCH']}{_RESET}   "
         f"{_YELLOW}POSSIBLE_MATCH {counts['POSSIBLE_MATCH']}{_RESET}   "
         f"{_RED}NO_MATCH {counts['NO_MATCH']}{_RESET}\n"
