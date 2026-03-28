@@ -118,6 +118,16 @@ def generate(result: MatchResult) -> str:
             "suggesting this comparison is ambiguous."
         )
 
+    # ── Family-name gate note ─────────────────────────────────────────────────
+    if (result.decision == "NO_MATCH"
+            and fn is not None and fn < 0.65
+            and gn is not None and gn >= 0.65):
+        sentences.append(
+            "A match requires the last name to agree. "
+            f"The given name is similar ({gn:.2f}) but the family name does not "
+            f"match ({fn:.2f}), so this is treated as no match."
+        )
+
     # ── Final verdict sentence ────────────────────────────────────────────────
     s = result.score
     if result.decision == "MATCH":

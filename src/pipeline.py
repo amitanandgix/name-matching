@@ -1,5 +1,9 @@
 """High-level NameMatcher: transliterate → parse → normalize → score → decide."""
 
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from config import POSSIBLE_MATCH_THRESHOLD
+
 from .transliterate import transliterate, has_non_latin
 from .parse import parse
 from .match import match, score as name_score, decide, compute_confidence, MatchResult
@@ -47,11 +51,17 @@ class NameMatcher:
         # Step 4 — component-level scores
         result.components1 = comp1
         result.components2 = comp2
-        comp_scores = _component_scores(
-            _LatinComponents(comp1, latin1),
-            _LatinComponents(comp2, latin2),
-        )
+        lc1 = _LatinComponents(comp1, latin1)
+        lc2 = _LatinComponents(comp2, latin2)
+        comp_scores = _component_scores(lc1, lc2)
         result.component_scores = comp_scores
+
+        # Step 4b — family-name gate: a match requires the last name to match.
+        # If both names have a parsed family name and it scores below the
+        # possible-match threshold, override the decision to NO_MATCH.
+        fn_score = comp_scores.get("family_name")
+        if fn_score is not None and fn_score < POSSIBLE_MATCH_THRESHOLD:
+            result.decision = "NO_MATCH"
 
         # Step 5 — recompute confidence now that component scores are available
         result.confidence, result.confidence_label = compute_confidence(
