@@ -8,6 +8,8 @@ Usage
 """
 
 import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 from src.pipeline import NameMatcher
 from src.match import MatchResult
 

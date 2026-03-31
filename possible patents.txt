@@ -1,0 +1,41 @@
+Possible Patent Ideas — Name Matching ISO Deviations
+======================================================
+
+This program performs name matching across multiple scripts. Below is a concise
+summary of where the current transliteration deviates from ISO standards and
+the potential innovations involved.
+
+1. ARABIC (ISO 233)
+   - Current: Drops all short vowels (consonants only). e.g. محمد → mhmd
+   - ISO 233: Requires vowels with diacritical marks. e.g. محمد → muḥammad
+   - Patent angle: Vowel reconstruction for unvocalized Arabic text in name
+     matching using phonetic heuristics or name-specific lookup models.
+
+2. HEBREW (ISO 259)
+   - Current: Drops all vowels (consonants only). e.g. דוד → dvd
+   - ISO 259: Requires vowel representation. e.g. דוד → dāwid
+   - Patent angle: Consonant-only to full-phoneme reconstruction for Hebrew
+     names without niqqud (vowel diacritics), improving identity matching.
+
+3. RUSSIAN / CYRILLIC (ISO 9:1995)
+   - Current: Maps ё → io (unidecode default). e.g. Горбачёв → Gorbachiov
+   - ISO 9: Requires ё → ë (BGN/PCGN: yo). e.g. Горбачёв → Gorbachyov
+   - Patent angle: Script-aware Cyrillic romanization correction layer that
+     overrides unidecode's non-standard mappings for identity verification.
+
+4. CHINESE (ISO 7098)
+   - Current: Outputs tone-less Pinyin. e.g. 张伟 → zhang wei
+   - ISO 7098: Requires tone marks. e.g. 张伟 → Zhāng Wěi
+   - Impact: None on matching (normalization strips diacritics anyway).
+
+5. HINDI / DEVANAGARI (ISO 15919)
+   - Current: Strips long-vowel diacritics after IAST conversion.
+     e.g. राहुल → rahul (ISO 15919: rāhul)
+   - Impact: None on matching (normalization strips diacritics anyway).
+
+Key Insight
+-----------
+The most commercially valuable patent opportunity lies in Arabic and Hebrew
+vowel reconstruction for name matching — two languages where ISO-compliant
+transliteration significantly improves match scores and decision accuracy,
+with direct applications in KYC, sanctions screening, and identity verification.
